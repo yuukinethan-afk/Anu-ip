@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cek IP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --ink: #101820;
+    --mute: #5b6670;
+    --line: #dde2e6;
+    --sheet: #ffffff;
+    --ping: #e4004b;
+    --truth: #0e7c86;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: 'Schibsted Grotesk', system-ui, sans-serif;
+    color: var(--ink);
+    background: #e9edf0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #map { position: fixed; inset: 0; z-index: 0; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  button { font: inherit; color: inherit; cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+  /* Panel: sheet bawah di HP, panel kiri di layar lebar */
+  .panel {
+    position: fixed; z-index: 500;
+    left: 0; right: 0; bottom: 0;
+    max-height: 62dvh; overflow-y: auto;
+    background: var(--sheet);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -6px 30px rgba(16, 24, 32, .18);
+    padding: 6px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+  .grab {
+    display: block; width: 100%; height: 22px; border: 0; background: none; padding: 0; position: relative;
+  }
+  .grab::after {
+    content: ''; position: absolute; left: 50%; top: 8px; width: 42px; height: 4px;
+    margin-left: -21px; border-radius: 2px; background: var(--line);
+  }
+  .panel.collapsed #detail, .panel.collapsed #histBox { display: none; }
+  @media (min-width: 720px) {
+    .panel {
+      left: 20px; right: auto; top: 20px; bottom: auto; width: 380px;
+      max-height: calc(100dvh - 40px);
+      border-radius: 12px; padding: 18px;
+      box-shadow: 0 8px 36px rgba(16, 24, 32, .22);
+    }
+    .grab { display: none; }
+  }
+
+  .search { display: flex; gap: 8px; }
+  .search input {
+    flex: 1; min-width: 0; height: 48px; padding: 0 14px;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    font: inherit; font-size: 16px; color: var(--ink); background: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .search input:focus { border-color: var(--ink); outline: none; }
+  .go {
+    height: 48px; padding: 0 22px; border: 0; border-radius: 8px;
+    background: var(--ink); color: #fff; font-weight: 700; font-size: 16px;
+  }
+  .go:disabled { opacity: .55; cursor: progress; }
+  .link {
+    border: 0; background: none; padding: 8px 0 0; color: var(--mute);
+    font-size: 14px; text-decoration: underline; text-underline-offset: 3px;
+  }
+  .link:hover { color: var(--ink); }
+  .err { margin: 12px 0 0; color: var(--ping); font-size: 14px; line-height: 1.4; }
+
+  .ipv {
+    display: block; width: 100%; margin: 16px 0 0; padding: 0; border: 0; background: none;
+    text-align: left; font-weight: 800; letter-spacing: -.03em; line-height: 1.05;
+    font-size: clamp(30px, 9vw, 40px); font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+  .ipv.long { font-size: 19px; letter-spacing: -.01em; }
+  .place { margin: 6px 0 0; font-size: 17px; font-weight: 500; line-height: 1.3; }
+  .self { margin: 4px 0 0; color: var(--mute); font-size: 14px; }
+
+  dl { margin: 14px 0 0; }
+  .row { display: grid; grid-template-columns: 104px 1fr; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  dt { color: var(--mute); }
+  dd { margin: 0; min-width: 0; }
+  dd button {
+    border: 0; background: none; padding: 0; text-align: left; word-break: break-word;
+    text-decoration: underline dotted transparent; text-underline-offset: 3px;
+  }
+  dd button:hover { text-decoration-color: var(--mute); }
+  .help { margin: 10px 0 0; color: var(--mute); font-size: 13px; line-height: 1.45; }
+
+  .alt {
+    display: block; width: 100%; margin-top: 14px; height: 46px;
+    border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; font-weight: 700; font-size: 15px;
+  }
+  .alt:disabled { opacity: .5; cursor: default; }
+  .cmp { margin-top: 12px; padding-left: 12px; border-left: 3px solid var(--truth); }
+  .cmp p { margin: 0; font-size: 15px; line-height: 1.4; }
+  .cmp .addr { margin-top: 4px; color: var(--mute); font-size: 13px; }
+
+  #histBox { margin-top: 20px; }
+  .hh { display: flex; align-items: baseline; justify-content: space-between; }
+  .hh h2 { margin: 0; font-size: 15px; font-weight: 700; }
+  .hh .link { padding: 0; }
+  #hist { list-style: none; margin: 6px 0 0; padding: 0; }
+  #hist button {
+    display: flex; width: 100%; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; font-size: 14px;
+  }
+  #hist strong { font-variant-numeric: tabular-nums; font-weight: 700; }
+  #hist span { color: var(--mute); text-align: right; }
+  #hist button:hover strong { text-decoration: underline; }
+
+  /* Penanda di peta */
+  .pin { position: relative; width: 18px; height: 18px; }
+  .pin i {
+    position: absolute; inset: 0; border-radius: 50%; background: var(--ping);
+    border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0, 0, 0, .35);
+  }
+  .pin b { position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--ping); opacity: 0; }
+  .pin.ping b { animation: ping 1.5s ease-out 2; }
+  .pin.truth i { background: var(--truth); }
+  .pin.old { transform: scale(.7); opacity: .85; }
+  .pin.old i { background: #8a949c; }
+  @keyframes ping { 0% { transform: scale(.4); opacity: .9; } 100% { transform: scale(2.8); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .pin.ping b { animation: none; } }
+
+  .leaflet-top.leaflet-right { margin-top: env(safe-area-inset-top); }
+
+  #toast {
+    position: fixed; z-index: 900; left: 50%; top: 16px; transform: translate(-50%, -80px);
+    background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px;
+    max-width: 90vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transition: transform .2s ease; pointer-events: none;
+  }
+  #toast.on { transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+</head>
+<body>
+
+<div id="map" aria-label="Peta lokasi IP"></div>
+
+<section id="panel" class="panel" aria-label="Cek IP">
+  <button class="grab" id="grab" type="button" aria-expanded="true" aria-label="Ciutkan panel"></button>
+
+  <form id="f" class="search" novalidate>
+    <label class="sr" for="ip">Alamat IP</label>
+    <input id="ip" placeholder="Ketik IP, misalnya 8.8.8.8" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="go" id="go" type="submit">Cek</button>
+  </form>
+  <button id="me" class="link" type="button">Pakai IP saya</button>
+  <p class="err" id="err" role="alert" hidden></p>
+
+  <div id="detail" hidden>
+    <button id="ipv" class="ipv" type="button" title="Salin IP"></button>
+    <p id="place" class="place"></p>
+    <p id="self" class="self" hidden>Ini IP yang kamu pakai sekarang.</p>
+    <dl id="rows"></dl>
+    <p class="help">Lingkaran merah di peta menunjukkan area perkiraan, bukan titik pasti. Ketuk nilai mana pun untuk menyalinnya.</p>
+    <button id="cmpBtn" class="alt" type="button">Bandingkan dengan GPS</button>
+    <div id="cmp" class="cmp" hidden>
+      <p id="cmpText"></p>
+      <p id="cmpAddr" class="addr"></p>
+    </div>
+  </div>
+
+  <div id="histBox" hidden>
+    <div class="hh"><h2>Riwayat</h2><button id="clr" type="button" class="link">Hapus riwayat</button></div>
+    <ul id="hist"></ul>
+  </div>
+</section>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isMobile = () => matchMedia('(max-width:719px)').matches;
+  const HKEY = 'cekip.riwayat';
+  const panel = $('#panel');
+
+  const map = L.map('map', { zoomControl: false }).setView([-2.5, 118], 5);
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  const hist = L.layerGroup().addTo(map);
+  const cur = L.layerGroup().addTo(map);
+  const truth = L.layerGroup().addTo(map);
+  const pin = k => L.divIcon({ className: '', html: `<div class="pin ${k}"><b></b><i></i></div>`, iconSize: [18, 18], iconAnchor: [9, 9] });
+
+  let current = null;
+
+  const loadHist = () => { try { return JSON.parse(localStorage.getItem(HKEY)) || []; } catch { return []; } };
+  const saveHist = h => { try { localStorage.setItem(HKEY, JSON.stringify(h)); } catch {} };
+
+  let tt;
+  function toast(m) {
+    const t = $('#toast'); t.textContent = m; t.classList.add('on');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 1500);
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); toast('Disalin: ' + text); }
+    catch { toast('Tidak bisa menyalin'); }
+  }
+
+  function km(a, b) {
+    const r = x => x * Math.PI / 180, R = 6371;
+    const dLat = r(b[0] - a[0]), dLon = r(b[1] - a[1]);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a[0])) * Math.cos(r(b[0])) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const fmtKm = v => v < 1 ? Math.round(v * 1000) + ' m' : v < 10 ? v.toFixed(1) + ' km' : Math.round(v) + ' km';
+
+  // Geser pusat peta supaya titik tidak tertutup panel
+  function focusOn(ll, zoom) {
+    const p = map.project(ll, zoom);
+    const c = isMobile()
+      ? map.unproject(p.add([0, panel.offsetHeight / 2]), zoom)
+      : map.unproject(p.subtract([panel.offsetWidth / 2 + 10, 0]), zoom);
+    map.flyTo(c, zoom, { animate: !reduced, duration: 1.2 });
+  }
+  function fitBoth(a, b) {
+    const m = isMobile();
+    map.fitBounds(L.latLngBounds([a, b]), {
+      paddingTopLeft: m ? [30, 60] : [panel.offsetWidth + 60, 50],
+      paddingBottomRight: m ? [30, panel.offsetHeight + 20] : [50, 50],
+      maxZoom: 13, animate: !reduced
+    });
+  }
+
+  function renderHist() {
+    const h = loadHist(), ul = $('#hist');
+    ul.textContent = ''; hist.clearLayers();
+    $('#histBox').hidden = !h.length;
+    h.forEach(e => {
+      const li = document.createElement('li'), b = document.createElement('button');
+      b.type = 'button';
+      const s = document.createElement('strong'); s.textContent = e.ip;
+      const sp = document.createElement('span'); sp.textContent = e.label;
+      b.append(s, sp);
+      b.onclick = () => { $('#ip').value = e.ip; lookup(e.ip); };
+      li.append(b); ul.append(li);
+      if (typeof e.lat === 'number' && !(current && current.ip === e.ip)) {
+        L.marker([e.lat, e.lon], { icon: pin('old'), keyboard: false })
+          .bindTooltip(e.ip + ', ' + e.label)
+          .on('click', () => { $('#ip').value = e.ip; lookup(e.ip); })
+          .addTo(hist);
+      }
+    });
+  }
+  function pushHist(d) {
+    const label = [d.city, d.country].filter(Boolean).join(', ') || 'Lokasi tidak diketahui';
+    const h = loadHist().filter(e => e.ip !== d.ip);
+    h.unshift({ ip: d.ip, label, lat: d.latitude, lon: d.longitude });
+    saveHist(h.slice(0, 8));
+  }
+
+  function addRow(dl, k, v) {
+    if (v === undefined || v === null || v === '') return;
+    const row = document.createElement('div'); row.className = 'row';
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd');
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = v;
+    b.onclick = () => copy(String(v));
+    dd.append(b); row.append(dt, dd); dl.append(row);
+  }
+
+  function show(d, self) {
+    const has = typeof d.latitude === 'number' && typeof d.longitude === 'number';
+    const ll = has ? [d.latitude, d.longitude] : null;
+    current = { ip: d.ip, ll };
+    cur.clearLayers(); truth.clearLayers();
+    $('#cmp').hidden = true;
+    const cb = $('#cmpBtn'); cb.disabled = !has; cb.textContent = 'Bandingkan dengan GPS';
+
+    const ipEl = $('#ipv'); ipEl.textContent = d.ip; ipEl.classList.toggle('long', d.ip.length > 20);
+    $('#place').textContent = [d.city, d.region, d.country].filter(Boolean).join(', ') || 'Lokasi tidak diketahui';
+    $('#self').hidden = !self;
+
+    let tz = '';
+    if (d.timezone && d.timezone.id) {
+      tz = d.timezone.id;
+      try {
+        const t = new Date().toLocaleTimeString('id-ID', { timeZone: d.timezone.id, hour: '2-digit', minute: '2-digit' });
+        tz += ', sekarang ' + t;
+      } catch {}
+    }
+    const dl = $('#rows'); dl.textContent = '';
+    addRow(dl, 'Negara', d.country);
+    addRow(dl, 'Wilayah', d.region);
+    addRow(dl, 'Kota', d.city);
+    addRow(dl, 'Kode pos', d.postal);
+    if (has) addRow(dl, 'Koordinat', d.latitude.toFixed(4) + ', ' + d.longitude.toFixed(4));
+    addRow(dl, 'Operator', d.connection && d.connection.isp);
+    addRow(dl, 'Organisasi', d.connection && d.connection.org);
+    addRow(dl, 'ASN', d.connection && d.connection.asn ? 'AS' + d.connection.asn : '');
+    addRow(dl, 'Zona waktu', tz);
+
+    pushHist(d); renderHist();
+    $('#detail').hidden = false;
+    setCollapsed(false);
+
+    if (has) {
+      const radius = d.city ? 12000 : d.region ? 80000 : 400000;
+      const zoom = d.city ? 10 : d.region ? 7 : 4;
+      L.circle(ll, { radius, color: '#e4004b', weight: 1, fillColor: '#e4004b', fillOpacity: .1 }).addTo(cur);
+      L.marker(ll, { icon: pin('ping'), keyboard: false }).addTo(cur);
+      requestAnimationFrame(() => focusOn(ll, zoom));
+    }
+  }
+
+  function showError(msg) { const e = $('#err'); e.textContent = msg; e.hidden = !msg; }
+  function setBusy(b) { const g = $('#go'); g.disabled = b; g.textContent = b ? 'Mencari...' : 'Cek'; }
+
+  // Coba backend dulu (/api/lookup). Kalau tidak ada atau gagal, panggil layanan langsung dari browser.
+  async function fetchGeo(ip) {
+    try {
+      const r = await fetch('/api/lookup' + (ip ? '?ip=' + encodeURIComponent(ip) : ''));
+      if (r.status === 400) return { invalid: true };
+      if (r.ok) return await r.json();
+    } catch {}
+    const r2 = await fetch('https://ipwho.is/' + (ip ? encodeURIComponent(ip) : ''));
+    return await r2.json();
+  }
+
+  async function lookup(ip) {
+    setBusy(true); showError('');
+    try {
+      const d = await fetchGeo(ip);
+      if (d.invalid || (d.message && /invalid/i.test(d.message))) { showError('Format IP tidak valid. Contoh: 8.8.8.8 atau 2001:4860:4860::8888.'); return; }
+      if (!d.success) { showError('IP ini privat atau tidak ditemukan. Coba IP publik, misalnya 8.8.8.8.'); return; }
+      show(d, !ip);
+    } catch {
+      showError('Tidak bisa terhubung ke server. Periksa koneksi, lalu coba lagi.');
+    } finally { setBusy(false); }
+  }
+
+  function showCmp(text, addr) {
+    $('#cmp').hidden = false; $('#cmpText').textContent = text; $('#cmpAddr').textContent = addr || '';
+  }
+  function compareGPS() {
+    if (!current || !current.ll) return;
+    if (!navigator.geolocation) { showCmp('Browser ini tidak mendukung GPS.'); return; }
+    const btn = $('#cmpBtn'); btn.disabled = true; btn.textContent = 'Menunggu izin lokasi...';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const g = [pos.coords.latitude, pos.coords.longitude];
+      truth.clearLayers();
+      L.polyline([current.ll, g], { color: '#0e7c86', weight: 2, dashArray: '6 6' }).addTo(truth);
+      L.marker(g, { icon: pin('truth'), keyboard: false }).addTo(truth);
+      btn.disabled = false; btn.textContent = 'Bandingkan lagi dengan GPS';
+      showCmp('GPS kamu berjarak ' + fmtKm(km(current.ll, g)) + ' dari lokasi perkiraan IP ini.', 'Mencari alamat...');
+      requestAnimationFrame(() => fitBoth(current.ll, g));
+      try {
+        const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + g[0] + '&lon=' + g[1] + '&accept-language=id');
+        const j = await r.json();
+        $('#cmpAddr').textContent = j.display_name || 'Alamat tidak ditemukan.';
+      } catch { $('#cmpAddr').textContent = 'Alamat tidak bisa dimuat.'; }
+    }, () => {
+      btn.disabled = false; btn.textContent = 'Bandingkan dengan GPS';
+      showCmp('Izin lokasi ditolak. Aktifkan izin lokasi untuk situs ini di pengaturan browser, lalu coba lagi.');
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  }
+
+  function setCollapsed(c) {
+    panel.classList.toggle('collapsed', c);
+    $('#grab').setAttribute('aria-expanded', String(!c));
+    $('#grab').setAttribute('aria-label', c ? 'Buka panel' : 'Ciutkan panel');
+  }
+
+  $('#f').addEventListener('submit', e => { e.preventDefault(); lookup($('#ip').value.trim()); });
+  $('#me').onclick = () => { $('#ip').value = ''; lookup(''); };
+  $('#ipv').onclick = () => current && copy(current.ip);
+  $('#cmpBtn').onclick = compareGPS;
+  $('#grab').onclick = () => setCollapsed(!panel.classList.contains('collapsed'));
+  $('#clr').onclick = () => { saveHist([]); renderHist(); };
+  document.addEventListener('keydown', e => {
+    if (e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#ip').focus(); }
+  });
+
+  renderHist();
+  lookup('');
+})();
+</script>
+</body>
+</html>
